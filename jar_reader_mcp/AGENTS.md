@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-This Node.js 18+ TypeScript package is an MCP server. `src/index.ts` registers the eight `jar_*` tools and owns server state; `src/jar-reader.ts` contains archive reading, search, normalization, and caching. TypeScript compiles to ignored `dist/`. Tests are ESM under `test/`: `jar-reader.test.mjs` covers the reader, `server.test.mjs` exercises MCP transport, and `test/helpers/` creates temporary ZIP fixtures. `mcp_config_template.json` is an example host configuration. Read `CLAUDE.md` before changing streams, nested JARs, caching, or tool semantics.
+This TypeScript package is an MCP server. `src/index.ts` registers the eight `jar_*` tools and owns server state; `src/jar-reader.ts` contains archive reading, search, normalization, and caching. TypeScript compiles to ignored `dist/`. Tests are ESM under `test/`: `jar-reader.test.mjs` covers the reader, `server.test.mjs` exercises MCP transport, and `test/helpers/` creates temporary ZIP fixtures. `mcp_config_template.json` is an example host configuration. Read `CLAUDE.md` before changing streams, nested JARs, caching, or tool semantics.
 
 ## Build, Test, and Development Commands
 

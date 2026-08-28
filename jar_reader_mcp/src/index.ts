@@ -10,8 +10,11 @@ import { pathToFileURL } from 'node:url';
 import {
   DEFAULT_MAX_READ_BYTES,
   DEFAULT_SEARCH_EXTENSIONS,
+  isJarReference,
   JarReader,
   JarStats,
+  normalizeEntryPath,
+  parseJarReference,
 } from './jar-reader.js';
 
 const require = createRequire(import.meta.url);
@@ -30,69 +33,92 @@ const MAX_CONTENT_RESULTS = 1000;
 /** Maximum number of entries returned by jar_list_files per page. */
 const MAX_LIST_PAGE_SIZE = 2000;
 
+const OPTIONAL_JAR_PATH_SCHEMA = z.string().optional().describe(
+  'Open JAR to use: path, file:// or jar:// URL, or "path!/entry" reference ' +
+  '(auto-opened when not open yet; a trailing entry part is ignored). ' +
+  'Defaults to the current JAR.'
+);
+
 // ---- open-JAR registry ------------------------------------------------
 
-/** Open JARs keyed by path, or by "outer.jar!/nested.jar" label for nested JARs. */
+/** Open JARs keyed by canonical key (case-insensitive on win32, "!/" chains
+ * for nested JARs); readable display labels live on the readers themselves. */
 const openJars = new Map<string, JarReader>();
 /** JAR used when a tool call does not specify jarPath (the most recently opened). */
 let currentJarKey: string | null = null;
 
-function resolveReader(jarPath?: string): { reader: JarReader; key: string } {
-  const key = jarPath ?? currentJarKey;
-  if (!key) {
-    throw new Error('No JAR file is currently open. Call jar_open first.');
+/**
+ * Canonical lookup key for a jarPath chain: the outer filesystem path is
+ * resolved and lowercased on win32 (NTFS is case-insensitive there), nested
+ * chain segments are slash-normalized with case preserved.
+ */
+function canonicalKey(jarPath: string): string {
+  const segments = jarPath.split('!/');
+  const outer = resolve(segments[0]);
+  const outerKey = process.platform === 'win32' ? outer.toLowerCase() : outer;
+  return [outerKey, ...segments.slice(1).map(normalizeEntryPath)].join('!/');
+}
+
+/**
+ * Resolve the JAR to operate on. Without jarPath, the current JAR is used.
+ * An explicit jarPath (path, file:// or jar:// URL, or "path!/entry"
+ * reference — the entry part is ignored) selects an open JAR, or auto-opens
+ * the referenced JAR on demand when it is not open yet. This lets references
+ * returned by other MCP tools (e.g. intellij-index-mcp jar:// URLs) be used
+ * with any JAR content tool directly.
+ */
+async function resolveReader(jarPath?: string): Promise<{ reader: JarReader; key: string; label: string }> {
+  if (jarPath === undefined) {
+    if (!currentJarKey) {
+      throw new Error('No JAR file is currently open. Call jar_open first.');
+    }
+    const current = openJars.get(currentJarKey)!;
+    return { reader: current, key: currentJarKey, label: current.label };
   }
-  const reader = openJars.get(key);
-  if (!reader) {
-    throw new Error(`No open JAR matches "${key}". Call jar_open first.`);
+  const target = parseJarReference(jarPath).jarPath;
+  const key = canonicalKey(target);
+  const existing = openJars.get(key);
+  if (existing) {
+    return { reader: existing, key, label: existing.label };
   }
-  return { reader, key };
+  const opened = await openJar(target);
+  return { reader: opened.reader, key: opened.key, label: opened.label };
 }
 
 /**
  * Open a JAR from disk, or a JAR nested inside another JAR using the
  * "outer.jar!/path/inner.jar" syntax (multiple nesting levels allowed).
- * Reuses already-open readers, so re-opening is cheap and idempotent.
+ * Registers every nesting level under its canonical key; re-opening is cheap
+ * and idempotent. The opened (innermost) JAR becomes the current one.
  */
-async function openJar(jarPath: string): Promise<{ label: string; stats: JarStats }> {
-  const existing = openJars.get(jarPath);
-  if (existing) {
-    currentJarKey = jarPath;
-    return { label: jarPath, stats: existing.getStats() };
-  }
-
+async function openJar(jarPath: string): Promise<{ reader: JarReader; label: string; key: string; stats: JarStats }> {
   const segments = jarPath.split('!/');
-  if (segments.length === 1) {
-    const reader = new JarReader(jarPath);
-    const stats = await reader.open();
-    openJars.set(jarPath, reader);
-    currentJarKey = jarPath;
-    return { label: jarPath, stats };
-  }
+  let key = canonicalKey(segments[0]);
 
-  // Nested JAR: open (or reuse) the outermost JAR, then descend.
-  const outerPath = segments[0];
-  let reader = openJars.get(outerPath);
+  let reader = openJars.get(key);
   if (!reader) {
-    reader = new JarReader(outerPath);
+    reader = new JarReader(segments[0]);
     await reader.open();
-    openJars.set(outerPath, reader);
+    openJars.set(key, reader);
   }
-  let label = outerPath;
+  let label = reader.label;
+
   for (let i = 1; i < segments.length; i++) {
-    const nestedLabel = `${label}!/${segments[i]}`;
-    let nested = openJars.get(nestedLabel);
+    const nestedKey = `${key}!/${normalizeEntryPath(segments[i])}`;
+    let nested = openJars.get(nestedKey);
     if (!nested) {
       const bytes = await reader.readRaw(segments[i]);
-      nested = new JarReader(bytes, nestedLabel);
+      nested = new JarReader(bytes, `${label}!/${segments[i]}`);
       await nested.open();
-      openJars.set(nestedLabel, nested);
+      openJars.set(nestedKey, nested);
     }
     reader = nested;
-    label = nestedLabel;
+    key = nestedKey;
+    label = nested.label;
   }
-  currentJarKey = label;
-  return { label, stats: reader.getStats() };
+
+  currentJarKey = key;
+  return { reader, label, key, stats: reader.getStats() };
 }
 
 function closeJar(jarPath?: string, all?: boolean): string {
@@ -104,18 +130,20 @@ function closeJar(jarPath?: string, all?: boolean): string {
     return count > 0 ? `Closed ${count} JAR file(s)` : 'No JAR files are open';
   }
 
-  const key = jarPath ?? currentJarKey;
+  const key = jarPath === undefined
+    ? currentJarKey
+    : canonicalKey(parseJarReference(jarPath).jarPath);
   if (!key) return 'No JAR file is currently open';
 
   const reader = openJars.get(key);
-  if (!reader) return `No open JAR matches "${key}"`;
+  if (!reader) return `No open JAR matches "${jarPath}"`;
 
   reader.close();
   openJars.delete(key);
   if (currentJarKey === key) {
     currentJarKey = openJars.size > 0 ? openJars.keys().next().value as string : null;
   }
-  return `Successfully closed JAR: ${key}`;
+  return `Successfully closed JAR: ${reader.label}`;
 }
 
 // ---- tool helpers -----------------------------------------------------
@@ -153,6 +181,32 @@ function textResult(text: string, structured?: Record<string, unknown>): CallToo
   };
 }
 
+/**
+ * Resolve a filePath argument plus optional jarPath to a reader and an entry
+ * path. A full reference in filePath ("lib.jar!/entry" or a jar:// URL)
+ * determines the target on its own (auto-opening the JAR) and takes
+ * precedence over jarPath; otherwise the jarPath/current JAR is used and
+ * filePath is treated as a plain entry path.
+ */
+async function resolveFileTarget(
+  filePath: string,
+  jarPath?: string
+): Promise<{ reader: JarReader; filePath: string }> {
+  if (isJarReference(filePath)) {
+    const parsed = parseJarReference(filePath);
+    if (parsed.entry === undefined) {
+      throw new Error(
+        `"${filePath}" is a JAR reference without an entry. Pass the path inside the JAR, ` +
+        'or a full "lib.jar!/entry/path" reference.'
+      );
+    }
+    const { reader } = await resolveReader(parsed.jarPath);
+    return { reader, filePath: parsed.entry };
+  }
+  const { reader } = await resolveReader(jarPath);
+  return { reader, filePath };
+}
+
 function formatBytes(bytes: number): string {
   return bytes < 1024
     ? `${bytes} B`
@@ -172,13 +226,18 @@ export function buildServer(): McpServer {
   server.registerTool('jar_open', {
     title: 'Open JAR',
     description:
-      'Open a JAR (ZIP) file for reading. Must be called before other jar_* tools. ' +
+      'Open a JAR (ZIP) file for reading. Must be called before other jar_* tools ' +
+      '(other tools also auto-open a JAR when given an explicit reference). ' +
       'JARs nested inside another JAR (e.g. Spring Boot BOOT-INF/lib/*.jar) can be opened ' +
       'directly with the "outer.jar!/BOOT-INF/lib/inner.jar" syntax. ' +
+      'Accepts plain paths, file:// URLs, and IntelliJ-style jar://...!/entry URLs ' +
+      '(the entry part is ignored — the JAR itself is opened), so paths returned by ' +
+      'intellij-native-mcp / intellij-index-mcp tools can be passed as-is. ' +
       'Re-opening an already-open JAR is cheap and just selects it as the current one.',
     inputSchema: {
       jarPath: z.string().describe(
-        'Absolute path to the JAR file. For a nested JAR, use "outer.jar!/path/inner.jar".'
+        'Absolute path to the JAR file, a file:// URL, or a jar://...!/entry URL ' +
+        '(entry ignored). Nested JARs: "outer.jar!/path/inner.jar" (multiple levels).'
       ),
     },
     outputSchema: {
@@ -189,10 +248,15 @@ export function buildServer(): McpServer {
       totalUncompressedSize: z.number(),
     },
   }, withErrors('jar_open', async ({ jarPath }) => {
-    const { label, stats } = await openJar(String(jarPath));
+    const input = String(jarPath);
+    const parsed = parseJarReference(input);
+    const { label, stats } = await openJar(parsed.jarPath);
+    const note = parsed.entry !== undefined
+      ? `\nNote: the reference pointed at entry "${parsed.entry}"; the containing JAR was opened.`
+      : '';
     return textResult(
       `Opened ${label}: ${stats.fileCount} files, ${stats.directoryCount} directories, ` +
-      `${formatBytes(stats.totalUncompressedSize)} uncompressed`,
+      `${formatBytes(stats.totalUncompressedSize)} uncompressed${note}`,
       { jarPath: label, ...stats }
     );
   }));
@@ -221,7 +285,7 @@ export function buildServer(): McpServer {
       'characters match literally). Returns a page of results; use offset/limit for paging ' +
       'when the JAR has many entries.',
     inputSchema: {
-      jarPath: z.string().optional().describe('Open JAR to use (defaults to the current one)'),
+      jarPath: OPTIONAL_JAR_PATH_SCHEMA,
       filter: z.string().optional().describe('Wildcard path filter, e.g. "com/example/*.java"'),
       offset: z.number().int().min(0).default(0).describe('First entry to return (0-based)'),
       limit: z.number().int().min(1).max(MAX_LIST_PAGE_SIZE).default(500)
@@ -238,7 +302,7 @@ export function buildServer(): McpServer {
       })),
     },
   }, withErrors('jar_list_files', async (args) => {
-    const { reader } = resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
+    const { reader } = await resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
     const offset = Number(args.offset ?? 0);
     const limit = Number(args.limit ?? 500);
     const { entries, total } = reader.listFiles(
@@ -264,11 +328,18 @@ export function buildServer(): McpServer {
     description:
       'Read the text content of one file in the open JAR. Paths use forward slashes but ' +
       'backslashes are also accepted, and lookup falls back to case-insensitive matching. ' +
+      'filePath may instead be a full reference — "lib.jar!/com/example/Service.java" or a ' +
+      'jar://...!/path URL as returned by IntelliJ MCP tools — which auto-opens that JAR. ' +
       'Use startLine/endLine (1-based, inclusive) to read a slice of large files. ' +
-      'Binary files are detected and reported instead of returned.',
+      'Binary files are detected and reported instead of returned; for bytecode-only ' +
+      '.class files prefer IDE tools (intellij-index-mcp ide_read_file decompiles them) — ' +
+      'this server is designed for -sources.jar files and resources.',
     inputSchema: {
-      jarPath: z.string().optional().describe('Open JAR to use (defaults to the current one)'),
-      filePath: z.string().describe('Path inside the JAR, e.g. "com/example/Service.java"'),
+      jarPath: OPTIONAL_JAR_PATH_SCHEMA,
+      filePath: z.string().describe(
+        'Path inside the JAR, e.g. "com/example/Service.java", or a full ' +
+        '"jar.jar!/entry" / jar://...!/entry reference (auto-opens the JAR)'
+      ),
       startLine: z.number().int().min(1).optional().describe('First line to return (1-based)'),
       endLine: z.number().int().min(1).optional().describe('Last line to return (1-based, inclusive)'),
       maxBytes: z.number().int().min(1).max(50 * 1024 * 1024).optional()
@@ -285,8 +356,11 @@ export function buildServer(): McpServer {
       content: z.string(),
     },
   }, withErrors('jar_read_file', async (args) => {
-    const { reader } = resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
-    const result = await reader.readFile(String(args.filePath), {
+    const { reader, filePath } = await resolveFileTarget(
+      String(args.filePath),
+      args.jarPath === undefined ? undefined : String(args.jarPath)
+    );
+    const result = await reader.readFile(filePath, {
       startLine: args.startLine === undefined ? undefined : Number(args.startLine),
       endLine: args.endLine === undefined ? undefined : Number(args.endLine),
       maxBytes: args.maxBytes === undefined ? undefined : Number(args.maxBytes),
@@ -315,7 +389,7 @@ export function buildServer(): McpServer {
       'characters (including "/"), "?" matches one non-slash character, everything else ' +
       'matches literally. Matching is case-insensitive unless caseSensitive=true.',
     inputSchema: {
-      jarPath: z.string().optional().describe('Open JAR to use (defaults to the current one)'),
+      jarPath: OPTIONAL_JAR_PATH_SCHEMA,
       pattern: z.string().describe('Wildcard pattern, e.g. "*Service*.java" or "com/example/*"'),
       caseSensitive: z.boolean().default(false),
       limit: z.number().int().min(1).max(MAX_SEARCH_FILES_RESULTS).default(200)
@@ -327,7 +401,7 @@ export function buildServer(): McpServer {
       truncated: z.boolean(),
     },
   }, withErrors('jar_search_files', async (args) => {
-    const { reader } = resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
+    const { reader } = await resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
     const limit = Number(args.limit ?? 200);
     const all = reader.searchFiles(
       String(args.pattern),
@@ -357,7 +431,7 @@ export function buildServer(): McpServer {
       '.yml, .yaml, .json, .gradle, .sql, .md, .txt); pass fileExtensions: [] to search every ' +
       'file (binaries are skipped automatically). Extension matching is case-insensitive.',
     inputSchema: {
-      jarPath: z.string().optional().describe('Open JAR to use (defaults to the current one)'),
+      jarPath: OPTIONAL_JAR_PATH_SCHEMA,
       pattern: z.string().describe('Regular expression to match against each line'),
       fileExtensions: z.array(z.string()).optional()
         .describe(`Extensions to search (default: ${DEFAULT_SEARCH_EXTENSIONS.join(', ')}); [] = all files`),
@@ -376,7 +450,7 @@ export function buildServer(): McpServer {
       truncated: z.boolean(),
     },
   }, withErrors('jar_search_content', async (args) => {
-    const { reader } = resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
+    const { reader } = await resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
     const { matches, filesSearched, truncated } = await reader.searchContent(String(args.pattern), {
       fileExtensions: args.fileExtensions === undefined
         ? undefined
@@ -407,7 +481,7 @@ export function buildServer(): McpServer {
       'Get metadata (path, size, type) for one entry in the open JAR. Accepts the same ' +
       'path forms as jar_read_file.',
     inputSchema: {
-      jarPath: z.string().optional().describe('Open JAR to use (defaults to the current one)'),
+      jarPath: OPTIONAL_JAR_PATH_SCHEMA,
       filePath: z.string().describe('Path inside the JAR'),
     },
     outputSchema: {
@@ -416,8 +490,11 @@ export function buildServer(): McpServer {
       isDirectory: z.boolean(),
     },
   }, withErrors('jar_get_file_info', async (args) => {
-    const { reader } = resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
-    const info = reader.getFileInfo(String(args.filePath));
+    const { reader, filePath } = await resolveFileTarget(
+      String(args.filePath),
+      args.jarPath === undefined ? undefined : String(args.jarPath)
+    );
+    const info = reader.getFileInfo(filePath);
     if (!info) {
       throw new Error(`File not found in JAR: ${args.filePath}`);
     }
@@ -432,10 +509,12 @@ export function buildServer(): McpServer {
     description:
       'Resolve a Java/Kotlin class name to its file(s) in the open JAR. Accepts a fully ' +
       'qualified name ("com.example.Service"), a simple name ("Service"), a nested class ' +
-      '("com.example.Service$Inner"), or an entry path ("com/example/Service.java"). ' +
-      'Returns matching source files (.java/.kt/...) and .class files with their sizes.',
+      '("com.example.Service$Inner"), an entry path ("com/example/Service.java"), or a full ' +
+      '"lib.jar!/com/example/Service.java" / jar://...!/path reference (auto-opens the JAR). ' +
+      'A trailing "#member" (as in symbol references) is ignored. Returns matching source ' +
+      'files (.java/.kt/...) and .class files with their sizes.',
     inputSchema: {
-      jarPath: z.string().optional().describe('Open JAR to use (defaults to the current one)'),
+      jarPath: OPTIONAL_JAR_PATH_SCHEMA,
       className: z.string().describe('Class name to resolve, e.g. "com.example.UserService"'),
     },
     outputSchema: {
@@ -445,8 +524,23 @@ export function buildServer(): McpServer {
       })),
     },
   }, withErrors('jar_find_class', async (args) => {
-    const { reader } = resolveReader(args.jarPath === undefined ? undefined : String(args.jarPath));
-    const classes = reader.findClass(String(args.className));
+    let className = String(args.className);
+    let reader: JarReader;
+    if (isJarReference(className)) {
+      const { reader: refReader, filePath } = await resolveFileTarget(
+        className,
+        args.jarPath === undefined ? undefined : String(args.jarPath)
+      );
+      reader = refReader;
+      className = filePath;
+    } else {
+      reader = (await resolveReader(
+        args.jarPath === undefined ? undefined : String(args.jarPath)
+      )).reader;
+    }
+    // Symbol references like "com.example.Service#doWork" point at a member;
+    // the class part is what resolves to files.
+    const classes = reader.findClass(className.replace(/#.*$/, ''));
 
     if (classes.length === 0) {
       return textResult(`No class found matching "${args.className}"`, { classes });

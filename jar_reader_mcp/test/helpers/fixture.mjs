@@ -64,6 +64,12 @@ export async function createFixture() {
   const jarPath = path.join(dir, 'fixture.jar');
   await fs.writeFile(jarPath, buildZip(entries));
 
+  // A copy under a path containing spaces, for URL percent-encoding tests.
+  const spacedDir = path.join(dir, 'my libs');
+  await fs.mkdir(spacedDir);
+  const spacedJarPath = path.join(spacedDir, 'my lib.jar');
+  await fs.writeFile(spacedJarPath, buildZip(entries));
+
   const notAZipPath = path.join(dir, 'not-a-jar.jar');
   await fs.writeFile(notAZipPath, Buffer.from('this is definitely not a zip file'));
 
@@ -72,6 +78,7 @@ export async function createFixture() {
   return {
     dir,
     jarPath,
+    spacedJarPath,
     innerJarPath: `${jarPath}!/BOOT-INF/lib/inner.jar`,
     notAZipPath,
     missingPath,

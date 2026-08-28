@@ -11,6 +11,7 @@ An MCP (Model Context Protocol) server that enables AI tools to read source code
 - **Find classes by name**: Resolve `com.example.Service` (FQCN), simple names, or nested classes to their files
 - **Multiple JARs at once**: Open several JARs and address each by path in every tool call
 - **Nested JAR support**: Open JARs inside JARs (e.g. Spring Boot `BOOT-INF/lib/*.jar`) with the `outer.jar!/inner.jar` syntax
+- **IDE-friendly references**: Every `jarPath`/`filePath` accepts plain paths, `file://` URLs, and IntelliJ-style `jar://…!/entry` URLs — references returned by other MCP tools can be pasted as-is (see [Working with IntelliJ MCP servers](#working-with-intellij-mcp-servers))
 - **Robustness**: Byte caps on reads (zip-bomb guard), LRU content cache, bounded file handles, clear errors for invalid patterns
 
 Designed for `-sources.jar` files; does not decompile bytecode.
@@ -76,15 +77,65 @@ On Windows, use `"command": "npx.cmd"` if the client cannot resolve `npx`. With 
 
 Set the `JAR_READER_DEBUG=1` environment variable to log tool calls and timing to stderr.
 
+## Path and URL Formats
+
+Every `jarPath` and `filePath` argument accepts the same reference forms:
+
+| Form | Example |
+|---|---|
+| Plain path | `D:/libs/foo-1.0-sources.jar` or `D:\libs\foo-1.0-sources.jar` |
+| `file://` URL | `file:///D:/libs/foo-1.0-sources.jar` |
+| IntelliJ `jar://` URL | `jar://D:/libs/foo-1.0-sources.jar!/com/foo/Bar.java` |
+| `jar:file://` URL | `jar:file:///D:/libs/foo.jar!/com/foo/Bar.java` |
+| Entry reference | `D:/libs/foo.jar!/com/foo/Bar.java` |
+| Nested JAR chain | `outer.jar!/BOOT-INF/lib/inner.jar` (multiple levels allowed) |
+
+Rules:
+
+- Percent escapes (`%20` for spaces) are decoded in URL forms; plain paths are taken literally.
+- A trailing `!/` segment is a file **entry** unless it ends with an archive extension (`.jar`, `.zip`, `.war`, `.ear`, …), in which case it continues the nested-JAR chain.
+- Passing a full reference (URL or `path!/entry`) to a content tool **auto-opens** the referenced JAR when it is not open yet; plain entry paths still require an open JAR (`jar_open` first, or the current one). `jar_close` only closes an already-open JAR and never auto-opens one.
+- JAR lookup is tolerant: slash direction and (on Windows) path case variants resolve to the same open JAR.
+- `jrt://` URLs (JDK runtime image) are not filesystem paths — open the JDK sources archive instead, e.g. `jar://<jdk-home>/lib/src.zip`.
+
+## Working with IntelliJ MCP Servers
+
+This server is designed to sit alongside the IDE MCP servers (`intellij-native-mcp` — the built-in IDEA MCP server — and `intellij-index-mcp` — the Index MCP plugin). They complement each other:
+
+| Need | Use |
+|---|---|
+| Symbols, usages, definitions, hierarchies, refactoring | `intellij-index-mcp` (`ide_find_class`, `ide_find_references`, `ide_type_hierarchy`, …) |
+| Decompiled bytecode (`.class` without sources) | IDE tools — this server reports `.class` files as binary |
+| Read one library source file by class name | `intellij-index-mcp` `ide_read_file` (`qualifiedName`) or this server's `jar_find_class` + `jar_read_file` |
+| List everything in a JAR, search its file names or contents (incl. `META-INF/spring.factories`, `.properties`, resources), explore nested fat-JAR entries | **this server** |
+| Any JAR work while the IDE is closed | **this server** |
+
+The key integration point: `intellij-index-mcp` returns library files as `jar://…!/entry` URLs, and this server accepts them verbatim. No path conversion needed:
+
+```
+# 1. Agent asks the IDE for a class (intellij-index-mcp):
+ide_find_class: { "query": "IntArrayList", "scope": "project_and_libraries" }
+  → file: "jar://D:/…/hppc-0.7.1-sources.jar!/com/carrotsearch/hppc/IntArrayList.java"
+
+# 2. Paste that URL straight into this server — open the whole JAR to explore it:
+jar_open:       { "jarPath": "jar://D:/…/hppc-0.7.1-sources.jar!/com/carrotsearch/hppc/IntArrayList.java" }
+jar_search_content: { "pattern": "ensureCapacity", "filter": "*IntArrayList*" }
+
+# …or read the one file directly (auto-opens the JAR):
+jar_read_file:  { "filePath": "jar://D:/…/hppc-0.7.1-sources.jar!/com/carrotsearch/hppc/IntArrayList.java" }
+```
+
+The reverse handoff (this server → IDE tools) works via **class names**: `jar_find_class` gives you the FQCN-able entry path, and `intellij-index-mcp`'s `ide_read_file` resolves library files reliably by `qualifiedName` (e.g. `com.carrotsearch.hppc.IntArrayList`). Note that passing a raw `jar://`/`path!/entry` string to `ide_read_file`'s `file` parameter can fail with "File not found" even for JARs the IDE knows — `qualifiedName` is the dependable form.
+
 ## Available Tools
 
-All tools accept an optional `jarPath` argument to target a specific open JAR; without it, the most recently opened JAR is used.
+All content tools accept an optional `jarPath` argument to target a specific JAR (any [reference form](#path-and-url-formats) works, and it auto-opens the JAR when not open yet); without it, the most recently opened JAR is used. `jar_close` also accepts these reference forms, but only to identify an already-open JAR.
 
 ### jar_open
 
-Open a JAR file for reading. Must be called before other operations.
+Open a JAR file for reading. Must be called before other operations (other tools also auto-open a JAR when given an explicit reference).
 
-- `jarPath` (string, required): Absolute path to the JAR. Nested JARs use the `outer.jar!/BOOT-INF/lib/inner.jar` syntax (multiple levels allowed).
+- `jarPath` (string, required): Absolute path to the JAR, a `file://` URL, or a `jar://…!/entry` URL (the entry part is ignored — the JAR itself is opened). Nested JARs use the `outer.jar!/BOOT-INF/lib/inner.jar` syntax (multiple levels allowed).
 
 ### jar_close
 
@@ -103,9 +154,9 @@ List entries, optionally filtered by wildcard pattern. Returns a page of results
 
 ### jar_read_file
 
-Read the content of a file in the JAR. Backslash paths are accepted and lookup falls back to case-insensitive matching.
+Read the content of a file in the JAR. Backslash paths are accepted and lookup falls back to case-insensitive matching. For bytecode-only `.class` files prefer IDE tools (they decompile); this server is designed for `-sources.jar` files and resources.
 
-- `filePath` (string, required): Path inside the JAR, e.g. `"com/example/Service.java"`
+- `filePath` (string, required): Path inside the JAR, e.g. `"com/example/Service.java"`, or a full `lib.jar!/entry` / `jar://…!/entry` reference (auto-opens that JAR)
 - `startLine` / `endLine` (number, optional): 1-based inclusive line range for reading slices of large files
 - `maxBytes` (number, optional): Byte cap for the read (default 10 MB)
 
@@ -139,7 +190,7 @@ Get metadata (path, size, type) for one entry.
 
 Resolve a class name to its source/class files.
 
-- `className` (string, required): FQCN (`"com.example.Service"`), simple name (`"Service"`), nested class (`"com.example.Service$Inner"`), or entry path (`"com/example/Service.java"`)
+- `className` (string, required): FQCN (`"com.example.Service"`), simple name (`"Service"`), nested class (`"com.example.Service$Inner"`), entry path (`"com/example/Service.java"`), or a full `lib.jar!/entry` / `jar://…!/entry` reference. A trailing `"#member"` (as in symbol references) is ignored.
 
 ## Usage Examples
 
@@ -185,7 +236,8 @@ jar_read_file: { "filePath": "com/example/Generated.java", "startLine": 100, "en
 
 ## Troubleshooting
 
-- **"No JAR file is currently open"** — call `jar_open` before other tools.
+- **"No JAR file is currently open"** — no `jarPath` was given and nothing is open. Call `jar_open`, or pass an explicit JAR reference (any form) to the tool — it will auto-open the JAR.
+- **A closed JAR came back to life** — referencing a JAR by path/URL auto-opens it on demand; use `jar_close` with `all: true` at the end of a session to release everything.
 - **"File not found in JAR"** — paths must match how they are stored; use `jar_list_files` to see exact paths. Backslash paths and different casing are tolerated.
 - **"Not a valid JAR/ZIP file"** — the path exists but is not a ZIP/JAR archive.
 - **Empty search results** — try broader patterns; for content search check the `fileExtensions` list (or pass `[]` for all files).

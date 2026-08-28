@@ -91,6 +91,100 @@ export function normalizeEntryPath(p: string): string {
   return s;
 }
 
+/** Extensions that mark a "!/" segment as a nested archive (chain continues)
+ * rather than a file entry, when the reference ends with such a segment. */
+const ARCHIVE_EXTENSIONS = ['.jar', '.zip', '.war', '.ear', '.apk', '.aar', '.sar'];
+
+const JRT_REFERENCE_ERROR =
+  'jrt:// URLs address the JDK runtime image, not files on disk. ' +
+  'Open the JDK sources archive instead, e.g. jar://<jdk-home>/lib/src.zip';
+
+/** A parsed JAR reference: which JAR to open, and which file inside it the
+ * reference points at (when it points at one). */
+export interface JarReference {
+  /** JAR to open: a filesystem path, or an "outer.jar!/nested.jar" chain. */
+  jarPath: string;
+  /** Entry inside the JAR, when the reference points at a single file. */
+  entry?: string;
+}
+
+/** True when the segment looks like an archive file (nested-JAR chain part). */
+function isArchiveSegment(segment: string): boolean {
+  const lower = segment.toLowerCase();
+  return ARCHIVE_EXTENSIONS.some(ext => lower.endsWith(ext));
+}
+
+/** Decode percent escapes; strings with a malformed "%" (legal in file names)
+ * are returned unchanged. */
+function decodeComponent(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
+
+/**
+ * Parse a JAR reference the way IntelliJ MCP tools spell them. Accepts:
+ *  - plain paths: "D:/libs/x.jar", "D:\libs\x.jar"
+ *  - nested chains: "outer.jar!/BOOT-INF/lib/inner.jar" (multiple levels)
+ *  - entry references: "D:/libs/x.jar!/com/foo/Bar.java"
+ *  - URLs: "jar://D:/libs/x.jar!/com/foo/Bar.java",
+ *    "jar:file:///D:/libs/x.jar!/com/foo/Bar.java", "file:///D:/libs/x.jar"
+ *    (percent-encoded as needed, e.g. "%20" for spaces)
+ * A trailing "!/" segment is an entry unless it ends with an archive
+ * extension, in which case nested-JAR chaining continues. The entry part is
+ * optional — callers that only want a JAR (e.g. jar_open) may ignore it.
+ */
+export function parseJarReference(input: string): JarReference {
+  let s = input.trim();
+  let fromUrl = false;
+
+  if (/^jrt:\/\//i.test(s)) {
+    throw new Error(JRT_REFERENCE_ERROR);
+  }
+
+  // Strip "jar://", "jar:file://", or "file://" with any slash count.
+  const scheme = s.match(/^(jar:(?:file:)?|file:)(\/+)/i);
+  if (scheme) {
+    s = s.slice(scheme[0].length);
+    fromUrl = true;
+    if (s.length > 0 && !/^[A-Za-z]:[\\/]/.test(s)) {
+      // Keep absolute POSIX paths absolute. Two slashes denote a host/UNC
+      // path; four or more preserve an explicitly encoded leading "//".
+      const prefix = scheme[2].length === 2 || scheme[2].length >= 4 ? '//' : '/';
+      s = `${prefix}${s}`;
+    }
+  } else if (/^\/[A-Za-z]:[\\/]/.test(s)) {
+    // "/D:/libs/x.jar" — a drive path with a stray leading slash.
+    s = s.slice(1);
+    fromUrl = true;
+  }
+
+  const decode = (part: string) => (fromUrl ? decodeComponent(part) : part);
+  const segments = s.split('!/');
+  let jarPath = decode(segments[0]);
+  let entry: string | undefined;
+
+  if (segments.length > 1) {
+    const chain = segments.slice(1).map(decode);
+    // The last segment is a file entry unless it keeps nesting archives.
+    if (!isArchiveSegment(chain[chain.length - 1])) {
+      entry = normalizeEntryPath(chain.pop()!);
+    }
+    if (chain.length > 0) jarPath += `!/${chain.join('!/')}`;
+  }
+  return entry === undefined ? { jarPath } : { jarPath, entry };
+}
+
+/**
+ * True when a string looks like a full JAR reference (URL scheme or "!/"
+ * separator) rather than a plain entry path inside an already-open JAR.
+ */
+export function isJarReference(s: string): boolean {
+  return /:\/\//.test(s) || s.includes('!/');
+}
+
 /**
  * Translate a wildcard pattern (`*` and `?`) into an anchored RegExp.
  * Every other character is matched literally, so patterns containing regex

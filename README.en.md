@@ -20,7 +20,7 @@ This project contains two complementary MCP servers:
 
 ### Prerequisites
 
-- Node.js (v16 or higher)
+- Node.js (v20 or higher)
 - npm or yarn
 - (Optional) Gradle - if using Gradle CLI to download sources
 
@@ -28,7 +28,7 @@ This project contains two complementary MCP servers:
 
 1. Clone the repository
 ```bash
-git clone <repository-url>
+git clone https://github.com/Ducaz/my-mcp-servers.git
 cd my-mcp-servers
 ```
 
@@ -46,6 +46,14 @@ npm run build
 ```
 
 ## MCP Server Configuration
+
+`jar_reader_mcp` is published on npm and can be registered without cloning this repository:
+
+```bash
+codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
+```
+
+For other MCP clients, use `"command": "npx"` with `"args": ["-y", "jar_reader_mcp@0.2.0"]`. On Windows, use `npx.cmd` if the client cannot resolve `npx`.
 
 ### Claude Desktop Configuration
 
@@ -66,15 +74,15 @@ Add the following configuration to your Claude Desktop config file:
       "type": "stdio"
     },
     "jar_reader_mcp": {
-      "command": "node",
-      "args": ["D:/Projects/my-mcp-servers/jar_reader_mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "jar_reader_mcp@0.2.0"],
       "type": "stdio"
     }
   }
 }
 ```
 
-**Note**: Replace `D:/Projects/my-mcp-servers` with your actual project path.
+**Note**: Replace the `gradle-manager-mcp` path with your local checkout path. The published `jar_reader_mcp` configuration does not require a checkout.
 
 ## Usage Guide
 

@@ -20,7 +20,7 @@
 
 ### 前置要求
 
-- Node.js (v16 或更高版本)
+- Node.js (v20 或更高版本)
 - npm 或 yarn
 - (可选) Gradle - 如果要使用 Gradle CLI 下载源码
 
@@ -28,7 +28,7 @@
 
 1. 克隆仓库
 ```bash
-git clone <repository-url>
+git clone https://github.com/Ducaz/my-mcp-servers.git
 cd my-mcp-servers
 ```
 
@@ -46,6 +46,14 @@ npm run build
 ```
 
 ## MCP 服务器配置
+
+`jar_reader_mcp` 已发布到 npm，无需克隆本仓库即可注册：
+
+```bash
+codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
+```
+
+其他 MCP 客户端可使用 `"command": "npx"` 和 `"args": ["-y", "jar_reader_mcp@0.2.0"]`。如果 Windows 客户端无法找到 `npx`，请改用 `npx.cmd`。
 
 ### Claude Desktop 配置
 
@@ -66,15 +74,15 @@ npm run build
       "type": "stdio"
     },
     "jar_reader_mcp": {
-      "command": "node",
-      "args": ["D:/Projects/my-mcp-servers/jar_reader_mcp/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "jar_reader_mcp@0.2.0"],
       "type": "stdio"
     }
   }
 }
 ```
 
-**注意**: 请将 `D:/Projects/my-mcp-servers` 替换为你实际的项目路径。
+**注意**: 请将 `gradle-manager-mcp` 的路径替换为实际检出路径；已发布的 `jar_reader_mcp` 配置不需要本地源码。
 
 ## 使用指南
 

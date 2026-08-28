@@ -1,63 +1,65 @@
 # My MCP Servers
 
-自定义的 MCP (Model Context Protocol) 服务器集合，用于增强 AI 工具的能力。
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-## 项目简介
+A collection of custom MCP (Model Context Protocol) servers to enhance AI tools capabilities.
 
-本项目包含两个相互配合的 MCP 服务器：
+## Project Overview
 
-1. **gradle-manager-mcp** - 下载和管理 Gradle 依赖的源码 JAR
-2. **jar_reader_mcp** - 读取 JAR 文件中的源代码和其他文件
+This project contains two complementary MCP servers:
 
-### 主要功能
+1. **gradle-manager-mcp** - Download and manage Gradle dependency source JARs
+2. **jar_reader_mcp** - Read source code and other files from JAR files
 
-- 下载第三方库的源码
-- 读取和分析 JAR 文件中的代码
-- 搜索 JAR 文件中的类和文件
-- 管理本地 Gradle 缓存中的源码
+### Key Features
 
-## 快速开始
+- Download third-party library source code
+- Read and analyze code within JAR files
+- Search for classes and files in JAR files
+- Manage source JARs in local Gradle cache
 
-### 前置要求
+## Quick Start
 
-- Node.js (v20 或更高版本)
-- npm 或 yarn
-- (可选) Gradle - 如果要使用 Gradle CLI 下载源码
+### Prerequisites
 
-### 安装步骤
+- Node.js (v20 or higher)
+- npm or yarn
+- (Optional) Gradle - if using Gradle CLI to download sources
 
-1. 克隆仓库
+### Installation Steps
+
+1. Clone the repository
 ```bash
 git clone https://github.com/Ducaz/my-mcp-servers.git
 cd my-mcp-servers
 ```
 
-2. 安装依赖并构建
+2. Install dependencies and build
 ```bash
-# 安装 gradle-manager-mcp
+# Install gradle-manager-mcp
 cd gradle-manager-mcp
 npm install
 npm run build
 
-# 安装 jar_reader_mcp
+# Install jar_reader_mcp
 cd ../jar_reader_mcp
 npm install
 npm run build
 ```
 
-## MCP 服务器配置
+## MCP Server Configuration
 
-`jar_reader_mcp` 已发布到 npm，无需克隆本仓库即可注册：
+`jar_reader_mcp` is published on npm and can be registered without cloning this repository:
 
 ```bash
 codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
 ```
 
-其他 MCP 客户端可使用 `"command": "npx"` 和 `"args": ["-y", "jar_reader_mcp@0.2.0"]`。如果 Windows 客户端无法找到 `npx`，请改用 `npx.cmd`。
+For other MCP clients, use `"command": "npx"` with `"args": ["-y", "jar_reader_mcp@0.2.0"]`. On Windows, use `npx.cmd` if the client cannot resolve `npx`.
 
-### Claude Desktop 配置
+### Claude Desktop Configuration
 
-将以下配置添加到 Claude Desktop 配置文件中：
+Add the following configuration to your Claude Desktop config file:
 
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 
@@ -82,27 +84,27 @@ codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
 }
 ```
 
-**注意**: 请将 `gradle-manager-mcp` 的路径替换为实际检出路径；已发布的 `jar_reader_mcp` 配置不需要本地源码。
+**Note**: Replace the `gradle-manager-mcp` path with your local checkout path. The published `jar_reader_mcp` configuration does not require a checkout.
 
-## 使用指南
+## Usage Guide
 
-### 工作流程
+### Workflow
 
-这两个 MCP 服务器配合使用的典型工作流程：
+The typical workflow for using these two MCP servers together:
 
 ```
-1. 使用 gradle_find_source 查找源码 JAR
-2. 如果未找到，使用 gradle_download_single_source 下载
-3. 使用 jar_open 打开 JAR 文件
-4. 使用 jar_* 系列工具读取、搜索和分析
-5. 使用 jar_close 关闭 JAR 文件
+1. Use gradle_find_source to locate source JAR
+2. If not found, use gradle_download_single_source to download
+3. Use jar_open to open the JAR file
+4. Use jar_* tools to read, search, and analyze
+5. Use jar_close to close the JAR file
 ```
 
-### 示例：查看第三方库源码
+### Example: Viewing Third-Party Library Source Code
 
-假设你想查看 `com.google.code.gson:gson:2.13.2` 的源码：
+Let's say you want to view the source of `com.google.code.gson:gson:2.13.2`:
 
-1. **查找源码**
+1. **Find the source**
 ```typescript
 gradle_find_source({
   coordinate: "com.google.code.gson:gson:2.13.2",
@@ -110,35 +112,35 @@ gradle_find_source({
 })
 ```
 
-2. **如果未找到，下载源码**
+2. **If not found, download the source**
 ```typescript
 gradle_download_single_source({
   coordinate: "com.google.code.gson:gson:2.13.2"
 })
 ```
 
-3. **打开 JAR 文件**
+3. **Open the JAR file**
 ```typescript
 jar_open({
   jarPath: "D:/java/gradle_repo/caches/modules-2/files-2.1/com.google.code.gson/gson/2.13.2/hash/gson-2.13.2-sources.jar"
 })
 ```
 
-4. **搜索文件**
+4. **Search for files**
 ```typescript
 jar_search_files({
   pattern: "*Gson*.java"
 })
 ```
 
-5. **读取文件内容**
+5. **Read file content**
 ```typescript
 jar_read_file({
   filePath: "com/google/gson/Gson.java"
 })
 ```
 
-6. **搜索代码内容**
+6. **Search code content**
 ```typescript
 jar_search_content({
   pattern: "public class Gson",
@@ -146,50 +148,50 @@ jar_search_content({
 })
 ```
 
-7. **关闭 JAR**
+7. **Close the JAR**
 ```typescript
 jar_close()
 ```
 
-## 详细文档
+## Detailed Documentation
 
 ### gradle-manager-mcp
 
-详见: [gradle-manager-mcp/README.md](gradle-manager-mcp/README.md)
+See: [gradle-manager-mcp/README.md](gradle-manager-mcp/README.md)
 
-**可用工具**:
-- `gradle_download_sources` - 下载整个 Gradle 项目的所有源码
-- `gradle_download_single_source` - 下载单个 artifact 的源码
-- `gradle_find_source` - 查找已缓存的源码 JAR
-- `gradle_list_cached_sources` - 列出所有已缓存的源码
-- `gradle_get_cache_info` - 获取 Gradle 缓存信息
+**Available Tools**:
+- `gradle_download_sources` - Download all sources for a Gradle project
+- `gradle_download_single_source` - Download a single artifact's source
+- `gradle_find_source` - Find cached source JAR
+- `gradle_list_cached_sources` - List all cached sources
+- `gradle_get_cache_info` - Get Gradle cache information
 
 ### jar_reader_mcp
 
-详见: [jar_reader_mcp/README.md](jar_reader_mcp/README.md)
+See: [jar_reader_mcp/README.md](jar_reader_mcp/README.md)
 
-**可用工具**:
-- `jar_open` - 打开 JAR 文件
-- `jar_list_files` - 列出 JAR 中所有文件
-- `jar_read_file` - 读取指定文件内容
-- `jar_search_files` - 按文件名搜索
-- `jar_search_content` - 搜索文件内容
-- `jar_get_file_info` - 获取文件信息
-- `jar_close` - 关闭 JAR 文件
+**Available Tools**:
+- `jar_open` - Open JAR file
+- `jar_list_files` - List all files in JAR
+- `jar_read_file` - Read specific file content
+- `jar_search_files` - Search by file name
+- `jar_search_content` - Search file content
+- `jar_get_file_info` - Get file information
+- `jar_close` - Close JAR file
 
-## 常见问题
+## FAQ
 
-### Q: 为什么需要这两个 MCP 服务器？
+### Q: Why do I need both MCP servers?
 
 A:
-- `gradle-manager-mcp` 负责下载和管理 Gradle 依赖的源码 JAR
-- `jar_reader_mcp` 负责读取和分析 JAR 文件中的内容
+- `gradle-manager-mcp` handles downloading and managing Gradle dependency source JARs
+- `jar_reader_mcp` handles reading and analyzing contents within JAR files
 
-两者配合使用可以让你方便地查看和分析第三方库的源代码。
+Together, they allow you to conveniently view and analyze third-party library source code.
 
-### Q: 如何自定义 Gradle 用户目录？
+### Q: How can I customize the Gradle user directory?
 
-A: 大多数工具都支持 `gradleUserHome` 参数，可以指定自定义的 Gradle 缓存路径：
+A: Most tools support the `gradleUserHome` parameter to specify a custom Gradle cache path:
 
 ```typescript
 gradle_find_source({
@@ -198,30 +200,30 @@ gradle_find_source({
 })
 ```
 
-### Q: JAR 文件路径必须是绝对路径吗？
+### Q: Must JAR file paths be absolute?
 
-A: 是的，`jar_open` 工具要求提供 JAR 文件的绝对路径。
+A: Yes, the `jar_open` tool requires absolute paths to JAR files.
 
-### Q: 可以读取编译后的 .class 文件吗？
+### Q: Can I read compiled .class files?
 
-A: 不可以，`jar_reader_mcp` 不支持字节码反编译。你需要源码 JAR 文件（通常以 `-sources.jar` 结尾）。
+A: No, `jar_reader_mcp` does not support bytecode decompilation. You need source JAR files (typically ending with `-sources.jar`).
 
-## 技术栈
+## Tech Stack
 
-- **TypeScript** - 主要开发语言
+- **TypeScript** - Primary development language
 - **@modelcontextprotocol/sdk** - MCP SDK
-- **axios** - HTTP 请求（用于下载源码）
-- **yauzl** - ZIP/JAR 文件解析
+- **axios** - HTTP requests (for downloading sources)
+- **yauzl** - ZIP/JAR file parsing
 
-## 开发
+## Development
 
-### 项目结构
+### Project Structure
 
 ```
 my-mcp-servers/
 ├── .gitignore
 ├── README.md
-├── README.en.md
+├── README.zh-CN.md
 ├── gradle-manager-mcp/
 │   ├── src/
 │   ├── dist/
@@ -236,43 +238,43 @@ my-mcp-servers/
     └── README.md
 ```
 
-### 构建步骤
+### Build Steps
 
-每个子项目都有独立的构建流程：
+Each subproject has its own build process:
 
 ```bash
-cd gradle-manager-mcp  # 或 jar_reader_mcp
+cd gradle-manager-mcp  # or jar_reader_mcp
 npm install
 npm run build
 ```
 
-### 测试
+### Testing
 
-每个子项目都可以独立测试：
+Each subproject can be tested independently:
 
 ```bash
-cd gradle-manager-mcp  # 或 jar_reader_mcp
+cd gradle-manager-mcp  # or jar_reader_mcp
 npm start
 ```
 
-## 贡献
+## Contributing
 
-欢迎贡献！请遵循以下步骤：
+Contributions are welcome! Please follow these steps:
 
-1. Fork 本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 创建 Pull Request
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
-## 许可证
+## License
 
-本项目采用 MIT 许可证 - 详见 LICENSE 文件。
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-## 联系方式
+## Contact
 
-如有问题或建议，请提交 Issue 或 Pull Request。
+For questions or suggestions, please submit an Issue or Pull Request.
 
 ---
 
-**注意**: 请确保在配置 MCP 服务器时使用正确的绝对路径，否则服务器无法正常工作。
+**Note**: Ensure you use the correct absolute path when configuring MCP servers, otherwise they won't work properly.

@@ -3,11 +3,10 @@
     "jar_reader_mcp": {
       "disabled": false,
       "timeout": 10000,
-      "command": "cmd",
+      "command": "npx",
       "args": [
-        "/c",
-        "node",
-        "d:/Projects/my-mcp-servers/jar_reader_mcp/dist/index.js"
+        "-y",
+        "jar_reader_mcp@0.2.0"
       ],
       "type": "stdio"
     }

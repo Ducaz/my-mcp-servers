@@ -15,11 +15,23 @@ An MCP (Model Context Protocol) server that enables AI tools to read source code
 
 Designed for `-sources.jar` files; does not decompile bytecode.
 
+## Requirements
+
+- Node.js 20 or newer
+- An MCP client with local stdio-server support
+
 ## Installation
 
+The recommended setup uses `npx`, so no global installation is required. Pin the version for reproducible agent configuration:
+
 ```bash
-cd d:/Projects/my-mcp-servers/jar_reader_mcp
-npm install
+npx -y jar_reader_mcp@0.2.0
+```
+
+The command starts an MCP stdio server and waits for its client; configure it in an MCP host instead of running it as an interactive CLI. A global installation is also available:
+
+```bash
+npm install -g jar_reader_mcp
 ```
 
 ## Build and Test
@@ -32,20 +44,35 @@ npm start           # Run the MCP server
 npm run inspector   # Test with MCP Inspector
 ```
 
-## Integration
+## MCP Client Setup
 
-Add the following to your MCP host configuration (e.g. Claude Desktop's `claude_desktop_config.json` on Windows: `%APPDATA%\Claude\claude_desktop_config.json`):
+### Codex
+
+Register the published package directly:
+
+```bash
+codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
+codex mcp list
+```
+
+Restart Codex or begin a new task after registration.
+
+### Other MCP Clients
+
+Add this stdio server to the client's MCP configuration:
 
 ```json
 {
   "mcpServers": {
     "jar_reader_mcp": {
-      "command": "node",
-      "args": ["d:/Projects/my-mcp-servers/jar_reader_mcp/dist/index.js"]
+      "command": "npx",
+      "args": ["-y", "jar_reader_mcp@0.2.0"]
     }
   }
 }
 ```
+
+On Windows, use `"command": "npx.cmd"` if the client cannot resolve `npx`. With a global installation, use `"command": "jar_reader_mcp"` and an empty `args` array.
 
 Set the `JAR_READER_DEBUG=1` environment variable to log tool calls and timing to stderr.
 

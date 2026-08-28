@@ -14,7 +14,7 @@ This package is a Node.js 20+ TypeScript MCP server for exploring source and res
 
 `buildServer()` creates the high-level `McpServer` used by tests; `main()` connects one `StdioServerTransport` only when `dist/index.js` is executed directly. `withErrors()` converts handler exceptions into MCP `isError` results. Diagnostics belong on stderr because stdout is reserved for the MCP protocol.
 
-The multi-JAR registry is keyed by disk path or a nested label such as `outer.jar!/BOOT-INF/lib/inner.jar`. Each tool accepts an optional `jarPath`; omission selects `currentJarKey`, the most recently opened archive. Keep `jar_close` able to close one archive, the current archive, or all archives.
+The multi-JAR registry uses canonical keys: resolve the outer filesystem path, lowercase it on win32, and append slash-normalized nested segments such as `!/BOOT-INF/lib/inner.jar` with their case preserved. Readable display labels live on `JarReader.label`. Content tools accept an optional `jarPath`; omission selects `currentJarKey`, the most recently opened archive. Explicit JAR references auto-open on demand. Keep `jar_close` able to close one already-open archive, the current archive, or all archives; it must never auto-open.
 
 Each `JarReader` holds one yauzl `ZipFile` with `autoClose: false`. `open()` scans entries once into an array and lookup map; `close()` must release the handle and clear cached bytes. Nested archives are loaded through `readRaw()` and `yauzl.fromBuffer()`.
 
@@ -28,7 +28,7 @@ The expected lifecycle is:
 jar_open → [list | read | search | info | find class]* → jar_close
 ```
 
-All tools except `jar_open` and `jar_close` require an open archive. Path filters use safe wildcards: `*` matches any run including `/`, `?` matches one non-slash character, and every other character is literal. Content search uses a regular expression compiled without `g`; a global regex advances `lastIndex` and can skip matching lines. `normalizeEntryPath()` converts backslashes, strips leading `/` and `./`, and removes a trailing slash. Exact lookup falls back to case-insensitive matching.
+Content tools require an open archive only when no explicit JAR reference is supplied. References accept plain paths, nested `outer.jar!/nested.jar` chains, `path!/entry` forms, and percent-decoded `jar://`, `jar:file://`, or `file://` URLs; `//host/` UNC paths remain intact. A trailing `!/` segment is an entry unless it ends with a supported archive extension. Full references in `filePath` or `className` select and auto-open their containing JAR, while `jrt://` is rejected with guidance to use `<jdk>/lib/src.zip`. Path filters use safe wildcards: `*` matches any run including `/`, `?` matches one non-slash character, and every other character is literal. Content search uses a regular expression compiled without `g`; a global regex advances `lastIndex` and can skip matching lines. `normalizeEntryPath()` converts backslashes, strips leading `/` and `./`, and removes a trailing slash. Exact lookup falls back to case-insensitive matching.
 
 ## Build, Test, and Development Commands
 

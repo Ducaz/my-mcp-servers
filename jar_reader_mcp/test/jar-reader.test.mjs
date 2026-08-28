@@ -4,7 +4,7 @@ import { test, before, after, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { JarReader, wildcardToRegex, normalizeEntryPath } from '../dist/jar-reader.js';
+import { JarReader, wildcardToRegex, normalizeEntryPath, parseJarReference, isJarReference } from '../dist/jar-reader.js';
 import { createFixture } from './helpers/fixture.mjs';
 import { buildZip } from './helpers/zip-builder.mjs';
 
@@ -73,6 +73,134 @@ describe('normalizeEntryPath', () => {
     assert.equal(normalizeEntryPath('/com/example/Service.java'), 'com/example/Service.java');
     assert.equal(normalizeEntryPath('./com/example/Service.java'), 'com/example/Service.java');
     assert.equal(normalizeEntryPath('com/example/'), 'com/example');
+  });
+});
+
+describe('parseJarReference', () => {
+  test('plain paths pass through unchanged', () => {
+    assert.deepEqual(parseJarReference('D:/libs/x.jar'), { jarPath: 'D:/libs/x.jar' });
+    assert.deepEqual(parseJarReference('D:\\libs\\x.jar'), { jarPath: 'D:\\libs\\x.jar' });
+    assert.deepEqual(parseJarReference('/usr/lib/x.jar'), { jarPath: '/usr/lib/x.jar' });
+  });
+
+  test('strips jar:// scheme and splits the entry', () => {
+    // The form intellij-index-mcp returns from ide_find_class & friends.
+    assert.deepEqual(
+      parseJarReference('jar://D:/libs/x.jar!/com/foo/Bar.java'),
+      { jarPath: 'D:/libs/x.jar', entry: 'com/foo/Bar.java' }
+    );
+    // jar:// URL without an entry addresses the JAR itself.
+    assert.deepEqual(
+      parseJarReference('jar://D:/libs/x.jar'),
+      { jarPath: 'D:/libs/x.jar' }
+    );
+  });
+
+  test('accepts jar:file:// and file:// URL forms', () => {
+    assert.deepEqual(
+      parseJarReference('jar:file:///D:/libs/x.jar!/com/foo/Bar.java'),
+      { jarPath: 'D:/libs/x.jar', entry: 'com/foo/Bar.java' }
+    );
+    assert.deepEqual(
+      parseJarReference('file:///D:/libs/x.jar'),
+      { jarPath: 'D:/libs/x.jar' }
+    );
+    assert.deepEqual(
+      parseJarReference('file://D:/libs/x.jar'),
+      { jarPath: 'D:/libs/x.jar' }
+    );
+    // A drive path with a stray leading slash (no scheme).
+    assert.deepEqual(
+      parseJarReference('/D:/libs/x.jar!/com/foo/Bar.java'),
+      { jarPath: 'D:/libs/x.jar', entry: 'com/foo/Bar.java' }
+    );
+  });
+
+  test('preserves absolute POSIX paths in URL forms', () => {
+    assert.deepEqual(
+      parseJarReference('jar:///opt/libs/x.jar!/com/foo/Bar.java'),
+      { jarPath: '/opt/libs/x.jar', entry: 'com/foo/Bar.java' }
+    );
+    assert.deepEqual(
+      parseJarReference('jar:file:///opt/libs/x.jar!/com/foo/Bar.java'),
+      { jarPath: '/opt/libs/x.jar', entry: 'com/foo/Bar.java' }
+    );
+    assert.deepEqual(
+      parseJarReference('file:///opt/libs/x.jar'),
+      { jarPath: '/opt/libs/x.jar' }
+    );
+  });
+
+  test('rejects jrt:// references with source archive guidance', () => {
+    assert.throws(
+      () => parseJarReference('jrt://java.base/java/util/ArrayList.java'),
+      /src\.zip/
+    );
+  });
+
+  test('decodes percent escapes in URLs but not in plain paths', () => {
+    assert.deepEqual(
+      parseJarReference('jar://D:/my%20libs/x.jar!/my%20file.java'),
+      { jarPath: 'D:/my libs/x.jar', entry: 'my file.java' }
+    );
+    // Unencoded spaces (as IntelliJ sometimes emits) are kept as-is.
+    assert.deepEqual(
+      parseJarReference('jar://D:/my libs/x.jar!/a b.properties'),
+      { jarPath: 'D:/my libs/x.jar', entry: 'a b.properties' }
+    );
+    // A literal "%" in a plain path is a valid file name, not an escape.
+    assert.deepEqual(
+      parseJarReference('D:/100%libs/x.jar'),
+      { jarPath: 'D:/100%libs/x.jar' }
+    );
+    // Malformed escapes in URLs fall back to the raw string.
+    assert.deepEqual(
+      parseJarReference('jar://D:/100%libs/x.jar'),
+      { jarPath: 'D:/100%libs/x.jar' }
+    );
+  });
+
+  test('keeps nesting chains and separates the trailing entry', () => {
+    // Nested chain without entry: last segment is an archive.
+    assert.deepEqual(
+      parseJarReference('D:/app.jar!/BOOT-INF/lib/inner.jar'),
+      { jarPath: 'D:/app.jar!/BOOT-INF/lib/inner.jar' }
+    );
+    // Nested chain with entry.
+    assert.deepEqual(
+      parseJarReference('jar://D:/app.jar!/BOOT-INF/lib/inner.jar!/com/foo/Bar.class'),
+      { jarPath: 'D:/app.jar!/BOOT-INF/lib/inner.jar', entry: 'com/foo/Bar.class' }
+    );
+    // Archive extension matching is case-insensitive and supports more than JARs.
+    assert.deepEqual(
+      parseJarReference('D:/app.jar!/BOOT-INF/lib/inner.ZIP'),
+      { jarPath: 'D:/app.jar!/BOOT-INF/lib/inner.ZIP' }
+    );
+    // JDK sources zip: module-directory entry.
+    assert.deepEqual(
+      parseJarReference('jar://D:/Program Files/jdk-21/lib/src.zip!/java.base/java/util/ArrayList.java'),
+      { jarPath: 'D:/Program Files/jdk-21/lib/src.zip', entry: 'java.base/java/util/ArrayList.java' }
+    );
+    // Trailing slash on the entry is normalized away.
+    assert.deepEqual(
+      parseJarReference('jar://D:/x.jar!/com/foo/'),
+      { jarPath: 'D:/x.jar', entry: 'com/foo' }
+    );
+  });
+
+  test('preserves UNC host paths', () => {
+    assert.deepEqual(
+      parseJarReference('file://server/share/x.jar'),
+      { jarPath: '//server/share/x.jar' }
+    );
+  });
+
+  test('isJarReference detects references vs plain entry paths', () => {
+    assert.equal(isJarReference('jar://D:/x.jar!/com/Foo.java'), true);
+    assert.equal(isJarReference('D:/x.jar!/com/Foo.java'), true);
+    assert.equal(isJarReference('file:///D:/x.jar'), true);
+    assert.equal(isJarReference('com/example/Service.java'), false);
+    assert.equal(isJarReference('com\\example\\Service.java'), false);
   });
 });
 

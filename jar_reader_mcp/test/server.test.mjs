@@ -3,6 +3,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { buildServer } from '../dist/index.js';
@@ -197,8 +198,11 @@ test('jar_close closes the current JAR and falls back to another open one', asyn
   const read = await call('jar_read_file', { filePath: 'com/example/Util.java' });
   assert.equal(read.isError, undefined);
 
-  const gone = await call('jar_list_files', { jarPath: fixture.innerJarPath });
-  assert.equal(gone.isError, true);
+  // Referencing a closed JAR re-opens it on demand (auto-open), but a call
+  // with no jarPath still resolves against the current JAR.
+  const reopened = await call('jar_list_files', { jarPath: fixture.innerJarPath });
+  assert.equal(reopened.isError, undefined);
+  assert.equal(reopened.structuredContent.entries.length > 0, true);
 });
 
 test('jar_close all=true closes everything', async () => {
@@ -209,4 +213,168 @@ test('jar_close all=true closes everything', async () => {
 
   const after = await call('jar_list_files', {});
   assert.equal(after.isError, true);
+});
+
+// ---- IntelliJ MCP interop ----------------------------------------------
+// Reference forms as emitted by intellij-index-mcp (jar://<path>!/entry from
+// ide_find_class & friends), intellij-native-mcp ("path!/entry", file://
+// URLs), and the IDE itself.
+
+/** Forward-slash form of a Windows path, as IntelliJ URLs spell it. */
+function toUrlPath(p) {
+  return p.replace(/\\/g, '/');
+}
+
+test('jar_open accepts a jar:// URL with a trailing entry', async () => {
+  const result = await call('jar_open', {
+    jarPath: `jar://${toUrlPath(fixture.jarPath)}!/com/example/Util.java`,
+  });
+  assert.equal(result.isError, undefined);
+  assert.match(text(result), /Opened .*fixture\.jar.*40 files/);
+  assert.match(text(result), /pointed at entry "com\/example\/Util\.java"/);
+
+  // The JAR is usable afterwards through plain entry paths.
+  const read = await call('jar_read_file', { filePath: 'com/example/Util.java' });
+  assert.equal(read.isError, undefined);
+  assert.match(text(read), /class Util/);
+});
+
+test('jar_open accepts percent-encoded and unencoded jar:// URLs with spaces', async () => {
+  const encoded = await call('jar_open', {
+    jarPath: `jar://${toUrlPath(fixture.spacedJarPath).replace(/ /g, '%20')}`,
+  });
+  assert.equal(encoded.isError, undefined);
+  assert.match(text(encoded), /Opened .*my lib\.jar/);
+
+  // IntelliJ sometimes emits URLs with literal spaces instead of %20.
+  const raw = await call('jar_open', {
+    jarPath: `jar://${toUrlPath(fixture.spacedJarPath)}!/META-INF/MANIFEST.MF`,
+  });
+  assert.equal(raw.isError, undefined);
+});
+
+test('jar_open accepts file:// URLs', async () => {
+  const result = await call('jar_open', {
+    jarPath: `file:///${toUrlPath(fixture.spacedJarPath)}`,
+  });
+  assert.equal(result.isError, undefined);
+  assert.match(text(result), /Opened .*my lib\.jar/);
+});
+
+test('jar_open accepts native file URLs from pathToFileURL', async () => {
+  await call('jar_close', { all: true });
+  const result = await call('jar_open', {
+    jarPath: pathToFileURL(fixture.spacedJarPath).href,
+  });
+  assert.equal(result.isError, undefined);
+  assert.match(text(result), /Opened .*my lib\.jar/);
+});
+
+test('jrt:// URLs get a targeted hint from every reference path', async () => {
+  const calls = [
+    ['jar_open', { jarPath: 'jrt://java.base/java/util/ArrayList.java' }],
+    ['jar_list_files', { jarPath: 'jrt://java.base/java/util/ArrayList.java' }],
+    ['jar_read_file', { filePath: 'jrt://java.base/java/util/ArrayList.java' }],
+    ['jar_find_class', { className: 'jrt://java.base/java/util/ArrayList.java' }],
+  ];
+
+  for (const [name, args] of calls) {
+    const result = await call(name, args);
+    assert.equal(result.isError, true, name);
+    assert.match(text(result), /jrt:\/\//, name);
+    assert.match(text(result), /src\.zip/, name);
+  }
+});
+
+test('jar_read_file auto-opens the JAR from a full jar:// reference', async () => {
+  await call('jar_close', { all: true });
+  const result = await call('jar_read_file', {
+    filePath: `jar://${toUrlPath(fixture.jarPath)}!/com/example/Util.java`,
+  });
+  assert.equal(result.isError, undefined);
+  assert.match(text(result), /class Util/);
+
+  // The auto-opened JAR became the current one.
+  const list = await call('jar_list_files', { filter: '*.java' });
+  assert.equal(list.isError, undefined);
+});
+
+test('jar_read_file auto-opens from a bare "path!/entry" reference', async () => {
+  await call('jar_close', { all: true });
+  const result = await call('jar_read_file', {
+    filePath: `${fixture.spacedJarPath}!/com/example/Service.java`,
+  });
+  assert.equal(result.isError, undefined);
+  assert.match(text(result), /class Service/);
+});
+
+test('full nested references auto-open the nested JAR', async () => {
+  await call('jar_close', { all: true });
+  const result = await call('jar_read_file', {
+    filePath: `jar://${toUrlPath(fixture.jarPath)}!/BOOT-INF/lib/inner.jar!/com/inner/Deep.java`,
+  });
+  assert.equal(result.isError, undefined);
+  assert.match(text(result), /class Deep/);
+});
+
+test('a jar-only reference in filePath fails with guidance', async () => {
+  const result = await call('jar_read_file', {
+    filePath: `jar://${toUrlPath(fixture.jarPath)}`,
+  });
+  assert.equal(result.isError, true);
+  assert.match(text(result), /without an entry/);
+});
+
+test('jarPath lookups tolerate slash direction and (on win32) case variants', async () => {
+  await call('jar_close', { all: true });
+  // Open via forward-slash path, reference via backslashes.
+  await call('jar_open', { jarPath: toUrlPath(fixture.jarPath) });
+  const viaBackslash = await call('jar_list_files', { jarPath: fixture.jarPath });
+  assert.equal(viaBackslash.isError, undefined);
+
+  if (process.platform === 'win32') {
+    const viaCase = await call('jar_search_files', {
+      jarPath: fixture.jarPath.toUpperCase(),
+      pattern: '*Service*.java',
+    });
+    assert.equal(viaCase.isError, undefined);
+  }
+});
+
+test('jar_close accepts jar:// URL references', async () => {
+  await call('jar_open', { jarPath: fixture.jarPath });
+  const result = await call('jar_close', {
+    jarPath: `jar://${toUrlPath(fixture.jarPath)}!/com/example/Util.java`,
+  });
+  assert.match(text(result), /Successfully closed/);
+});
+
+test('jar_close does not auto-open a closed JAR reference', async () => {
+  await call('jar_close', { all: true });
+  const result = await call('jar_close', {
+    jarPath: `jar://${toUrlPath(fixture.jarPath)}!/com/example/Util.java`,
+  });
+  assert.equal(result.isError, undefined);
+  assert.match(text(result), /No open JAR matches/);
+
+  const list = await call('jar_list_files', {});
+  assert.equal(list.isError, true);
+  assert.match(text(list), /No JAR file is currently open/);
+});
+
+test('jar_find_class ignores a trailing "#member" and accepts full references', async () => {
+  await call('jar_open', { jarPath: fixture.jarPath });
+  const member = await call('jar_find_class', { className: 'com.example.Service#doWork' });
+  assert.deepEqual(
+    member.structuredContent.classes.map(c => c.path),
+    ['com/example/Service.java', 'com/example/Service$Inner.class']
+  );
+
+  const ref = await call('jar_find_class', {
+    className: `jar://${toUrlPath(fixture.spacedJarPath)}!/com/example/Service.java`,
+  });
+  assert.deepEqual(
+    ref.structuredContent.classes.map(c => c.path),
+    ['com/example/Service.java', 'com/example/Service$Inner.class']
+  );
 });

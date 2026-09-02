@@ -158,13 +158,13 @@ Components:
 - `SHA1_HASH`: SHA-1 hash of the source JAR file
 - `FILE`: `{ARTIFACT_ID}-{VERSION}-sources.jar`
 
-## Integration with jar_reader_mcp
+## Integration with jar-reader-mcp
 
-This MCP server is designed to work with the `jar_reader_mcp` MCP server:
+This MCP server is designed to work with the `jar-reader-mcp` MCP server:
 
 1. Use `gradle_download_sources` or `gradle_download_single_source` to download source JARs
 2. Use `gradle_find_source` to locate the downloaded source JAR
-3. Use `jar_reader_mcp` to open and read the JAR contents
+3. Use `jar-reader-mcp` to open and read the JAR contents
 
 Example workflow:
 ```typescript
@@ -179,7 +179,7 @@ gradle_find_source({
 })
 // Returns: D:\java\gradle_repo\caches\modules-2\files-2.1\com.google.code.gson\gson\2.13.2\e28a0b248e9435c6b6863275b2e5c1569dfac888\gson-2.13.2-sources.jar
 
-// Read the JAR using jar_reader_mcp
+// Read the JAR using jar-reader-mcp
 jar_open({
   jarPath: "D:\\java\\gradle_repo\\caches\\modules-2\\files-2.1\\com.google.code.gson\\gson\\2.13.2\\e28a0b248e9435c6b6863275b2e5c1569dfac888\\gson-2.13.2-sources.jar"
 })

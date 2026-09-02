@@ -1,11 +1,11 @@
 {
-  "name": "jar_reader_mcp",
+  "name": "@ducaz/jar-reader-mcp",
   "version": "0.3.0",
   "description": "MCP server for reading source code from third-party JAR files",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "jar_reader_mcp": "dist/index.js"
+    "jar-reader-mcp": "dist/index.js"
   },
   "engines": {
     "node": ">=20"

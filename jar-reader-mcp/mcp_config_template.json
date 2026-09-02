@@ -1,12 +1,12 @@
 {
   "mcpServers": {
-    "jar_reader_mcp": {
+    "jar-reader-mcp": {
       "disabled": false,
       "timeout": 10000,
       "command": "npx",
       "args": [
         "-y",
-        "jar_reader_mcp@0.2.0"
+        "@ducaz/jar-reader-mcp@0.3.0"
       ],
       "type": "stdio"
     }

@@ -9,7 +9,7 @@
 本项目包含两个相互配合的 MCP 服务器：
 
 1. **gradle-manager-mcp** - 下载和管理 Gradle 依赖的源码 JAR
-2. **jar_reader_mcp** - 读取 JAR 文件中的源代码和其他文件
+2. **jar-reader-mcp** - 读取 JAR 文件中的源代码和其他文件
 
 ### 主要功能
 
@@ -41,21 +41,23 @@ cd gradle-manager-mcp
 npm install
 npm run build
 
-# 安装 jar_reader_mcp
-cd ../jar_reader_mcp
+# 安装 jar-reader-mcp
+cd ../jar-reader-mcp
 npm install
 npm run build
 ```
 
 ## MCP 服务器配置
 
-`jar_reader_mcp` 已发布到 npm，无需克隆本仓库即可注册：
+`@ducaz/jar-reader-mcp` 已发布到 npm，无需克隆本仓库即可注册：
+
+> 原 npm 包 `jar_reader_mcp` 已废弃。新配置和现有配置中的 npm 包引用都应迁移至 `@ducaz/jar-reader-mcp`。
 
 ```bash
-codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
+codex mcp add jar-reader-mcp -- npx -y @ducaz/jar-reader-mcp@0.3.0
 ```
 
-其他 MCP 客户端可使用 `"command": "npx"` 和 `"args": ["-y", "jar_reader_mcp@0.2.0"]`。如果 Windows 客户端无法找到 `npx`，请改用 `npx.cmd`。
+其他 MCP 客户端可使用 `"command": "npx"` 和 `"args": ["-y", "@ducaz/jar-reader-mcp@0.3.0"]`。如果 Windows 客户端无法找到 `npx`，请改用 `npx.cmd`。
 
 ### Claude Desktop 配置
 
@@ -75,16 +77,16 @@ codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
       "args": ["D:/Projects/my-mcp-servers/gradle-manager-mcp/dist/index.js"],
       "type": "stdio"
     },
-    "jar_reader_mcp": {
+    "jar-reader-mcp": {
       "command": "npx",
-      "args": ["-y", "jar_reader_mcp@0.2.0"],
+      "args": ["-y", "@ducaz/jar-reader-mcp@0.3.0"],
       "type": "stdio"
     }
   }
 }
 ```
 
-**注意**: 请将 `gradle-manager-mcp` 的路径替换为实际检出路径；已发布的 `jar_reader_mcp` 配置不需要本地源码。
+**注意**: 请将 `gradle-manager-mcp` 的路径替换为实际检出路径；已发布的 `jar-reader-mcp` 配置不需要本地源码。
 
 ## 使用指南
 
@@ -166,9 +168,9 @@ jar_close()
 - `gradle_list_cached_sources` - 列出所有已缓存的源码
 - `gradle_get_cache_info` - 获取 Gradle 缓存信息
 
-### jar_reader_mcp
+### jar-reader-mcp
 
-详见: [jar_reader_mcp/README.md](jar_reader_mcp/README.md)
+详见: [jar-reader-mcp/README.md](jar-reader-mcp/README.md)
 
 **可用工具**:
 - `jar_open` - 打开 JAR 文件
@@ -185,7 +187,7 @@ jar_close()
 
 A:
 - `gradle-manager-mcp` 负责下载和管理 Gradle 依赖的源码 JAR
-- `jar_reader_mcp` 负责读取和分析 JAR 文件中的内容
+- `jar-reader-mcp` 负责读取和分析 JAR 文件中的内容
 
 两者配合使用可以让你方便地查看和分析第三方库的源代码。
 
@@ -206,7 +208,7 @@ A: 是的，`jar_open` 工具要求提供 JAR 文件的绝对路径。
 
 ### Q: 可以读取编译后的 .class 文件吗？
 
-A: 不可以，`jar_reader_mcp` 不支持字节码反编译。你需要源码 JAR 文件（通常以 `-sources.jar` 结尾）。
+A: 不可以，`jar-reader-mcp` 不支持字节码反编译。你需要源码 JAR 文件（通常以 `-sources.jar` 结尾）。
 
 ## 技术栈
 
@@ -230,7 +232,7 @@ my-mcp-servers/
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── README.md
-└── jar_reader_mcp/
+└── jar-reader-mcp/
     ├── src/
     ├── dist/
     ├── package.json
@@ -243,7 +245,7 @@ my-mcp-servers/
 每个子项目都有独立的构建流程：
 
 ```bash
-cd gradle-manager-mcp  # 或 jar_reader_mcp
+cd gradle-manager-mcp  # 或 jar-reader-mcp
 npm install
 npm run build
 ```
@@ -253,7 +255,7 @@ npm run build
 每个子项目都可以独立测试：
 
 ```bash
-cd gradle-manager-mcp  # 或 jar_reader_mcp
+cd gradle-manager-mcp  # 或 jar-reader-mcp
 npm start
 ```
 

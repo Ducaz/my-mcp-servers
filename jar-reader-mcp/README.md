@@ -1,4 +1,4 @@
-# jar_reader_mcp
+# @ducaz/jar-reader-mcp
 
 An MCP (Model Context Protocol) server that enables AI tools to read source code and other files from third-party JAR files, similar to how you read local source code.
 
@@ -23,16 +23,18 @@ Designed for `-sources.jar` files; does not decompile bytecode.
 
 ## Installation
 
+> **Renamed package:** `jar_reader_mcp` is deprecated. Existing users should replace its npm package reference with `@ducaz/jar-reader-mcp`. The MCP server name and executable remain `jar-reader-mcp`.
+
 The recommended setup uses `npx`, so no global installation is required. Pin the version for reproducible agent configuration:
 
 ```bash
-npx -y jar_reader_mcp@0.2.0
+npx -y @ducaz/jar-reader-mcp@0.3.0
 ```
 
 The command starts an MCP stdio server and waits for its client; configure it in an MCP host instead of running it as an interactive CLI. A global installation is also available:
 
 ```bash
-npm install -g jar_reader_mcp
+npm install -g @ducaz/jar-reader-mcp
 ```
 
 ## Build and Test
@@ -52,7 +54,7 @@ npm run inspector   # Test with MCP Inspector
 Register the published package directly:
 
 ```bash
-codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
+codex mcp add jar-reader-mcp -- npx -y @ducaz/jar-reader-mcp@0.3.0
 codex mcp list
 ```
 
@@ -65,15 +67,15 @@ Add this stdio server to the client's MCP configuration:
 ```json
 {
   "mcpServers": {
-    "jar_reader_mcp": {
+    "jar-reader-mcp": {
       "command": "npx",
-      "args": ["-y", "jar_reader_mcp@0.2.0"]
+      "args": ["-y", "@ducaz/jar-reader-mcp@0.3.0"]
     }
   }
 }
 ```
 
-On Windows, use `"command": "npx.cmd"` if the client cannot resolve `npx`. With a global installation, use `"command": "jar_reader_mcp"` and an empty `args` array.
+On Windows, use `"command": "npx.cmd"` if the client cannot resolve `npx`. With a global installation, use `"command": "jar-reader-mcp"` and an empty `args` array.
 
 Set the `JAR_READER_DEBUG=1` environment variable to log tool calls and timing to stderr.
 
@@ -248,7 +250,7 @@ jar_read_file: { "filePath": "com/example/Generated.java", "startLine": 100, "en
 ### Project Structure
 
 ```
-jar_reader_mcp/
+jar-reader-mcp/
 ├── src/
 │   ├── index.ts        # MCP server entry point (tool registration)
 │   └── jar-reader.ts   # JAR reading, searching, caching

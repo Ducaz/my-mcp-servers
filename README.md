@@ -9,7 +9,7 @@ A collection of custom MCP (Model Context Protocol) servers to enhance AI tools 
 This project contains two complementary MCP servers:
 
 1. **gradle-manager-mcp** - Download and manage Gradle dependency source JARs
-2. **jar_reader_mcp** - Read source code and other files from JAR files
+2. **jar-reader-mcp** - Read source code and other files from JAR files
 
 ### Key Features
 
@@ -41,21 +41,23 @@ cd gradle-manager-mcp
 npm install
 npm run build
 
-# Install jar_reader_mcp
-cd ../jar_reader_mcp
+# Install jar-reader-mcp
+cd ../jar-reader-mcp
 npm install
 npm run build
 ```
 
 ## MCP Server Configuration
 
-`jar_reader_mcp` is published on npm and can be registered without cloning this repository:
+`@ducaz/jar-reader-mcp` is published on npm and can be registered without cloning this repository:
+
+> The former npm package `jar_reader_mcp` is deprecated. Use `@ducaz/jar-reader-mcp` for new and existing npm package references.
 
 ```bash
-codex mcp add jar_reader_mcp -- npx -y jar_reader_mcp@0.2.0
+codex mcp add jar-reader-mcp -- npx -y @ducaz/jar-reader-mcp@0.3.0
 ```
 
-For other MCP clients, use `"command": "npx"` with `"args": ["-y", "jar_reader_mcp@0.2.0"]`. On Windows, use `npx.cmd` if the client cannot resolve `npx`.
+For other MCP clients, use `"command": "npx"` with `"args": ["-y", "@ducaz/jar-reader-mcp@0.3.0"]`. On Windows, use `npx.cmd` if the client cannot resolve `npx`.
 
 ### Claude Desktop Configuration
 
@@ -75,16 +77,16 @@ Add the following configuration to your Claude Desktop config file:
       "args": ["D:/Projects/my-mcp-servers/gradle-manager-mcp/dist/index.js"],
       "type": "stdio"
     },
-    "jar_reader_mcp": {
+    "jar-reader-mcp": {
       "command": "npx",
-      "args": ["-y", "jar_reader_mcp@0.2.0"],
+      "args": ["-y", "@ducaz/jar-reader-mcp@0.3.0"],
       "type": "stdio"
     }
   }
 }
 ```
 
-**Note**: Replace the `gradle-manager-mcp` path with your local checkout path. The published `jar_reader_mcp` configuration does not require a checkout.
+**Note**: Replace the `gradle-manager-mcp` path with your local checkout path. The published `jar-reader-mcp` configuration does not require a checkout.
 
 ## Usage Guide
 
@@ -166,9 +168,9 @@ See: [gradle-manager-mcp/README.md](gradle-manager-mcp/README.md)
 - `gradle_list_cached_sources` - List all cached sources
 - `gradle_get_cache_info` - Get Gradle cache information
 
-### jar_reader_mcp
+### jar-reader-mcp
 
-See: [jar_reader_mcp/README.md](jar_reader_mcp/README.md)
+See: [jar-reader-mcp/README.md](jar-reader-mcp/README.md)
 
 **Available Tools**:
 - `jar_open` - Open JAR file
@@ -185,7 +187,7 @@ See: [jar_reader_mcp/README.md](jar_reader_mcp/README.md)
 
 A:
 - `gradle-manager-mcp` handles downloading and managing Gradle dependency source JARs
-- `jar_reader_mcp` handles reading and analyzing contents within JAR files
+- `jar-reader-mcp` handles reading and analyzing contents within JAR files
 
 Together, they allow you to conveniently view and analyze third-party library source code.
 
@@ -206,7 +208,7 @@ A: Yes, the `jar_open` tool requires absolute paths to JAR files.
 
 ### Q: Can I read compiled .class files?
 
-A: No, `jar_reader_mcp` does not support bytecode decompilation. You need source JAR files (typically ending with `-sources.jar`).
+A: No, `jar-reader-mcp` does not support bytecode decompilation. You need source JAR files (typically ending with `-sources.jar`).
 
 ## Tech Stack
 
@@ -230,7 +232,7 @@ my-mcp-servers/
 │   ├── package.json
 │   ├── tsconfig.json
 │   └── README.md
-└── jar_reader_mcp/
+└── jar-reader-mcp/
     ├── src/
     ├── dist/
     ├── package.json
@@ -243,7 +245,7 @@ my-mcp-servers/
 Each subproject has its own build process:
 
 ```bash
-cd gradle-manager-mcp  # or jar_reader_mcp
+cd gradle-manager-mcp  # or jar-reader-mcp
 npm install
 npm run build
 ```
@@ -253,7 +255,7 @@ npm run build
 Each subproject can be tested independently:
 
 ```bash
-cd gradle-manager-mcp  # or jar_reader_mcp
+cd gradle-manager-mcp  # or jar-reader-mcp
 npm start
 ```
 

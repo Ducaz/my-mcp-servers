@@ -23,7 +23,7 @@ const { version } = require('../package.json') as { version: string };
 // Debug logging goes to stderr so it never corrupts the stdio transport.
 const DEBUG = ['1', 'true'].includes((process.env.JAR_READER_DEBUG ?? '').toLowerCase());
 function debug(message: string): void {
-  if (DEBUG) console.error(`[jar_reader_mcp] ${message}`);
+  if (DEBUG) console.error(`[jar-reader-mcp] ${message}`);
 }
 
 /** Maximum number of files returned by jar_search_files. */
@@ -219,7 +219,7 @@ function formatBytes(bytes: number): string {
 
 export function buildServer(): McpServer {
   const server = new McpServer(
-    { name: 'jar_reader_mcp', version },
+    { name: 'jar-reader-mcp', version },
     { capabilities: { tools: {} } }
   );
 
@@ -563,7 +563,7 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await buildServer().connect(transport);
   debug('server started');
-  console.error('jar_reader_mcp MCP server running on stdio');
+  console.error('jar-reader-mcp MCP server running on stdio');
 }
 
 // Run only when executed directly (node dist/index.js), not when imported
